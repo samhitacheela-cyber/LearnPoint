@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>
+        LearnPoint - {{ course.title }}
+    </title>
+
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+    <div class="dashboard">
+
+
+        <!-- NAVBAR -->
+
+        <nav class="navbar">
+
+            <div class="logo">
+                LearnPoint
+            </div>
+
+            <div class="nav-links">
+
+                <a href="{{ url_for('profile') }}">Profile</a>
+
+                <a href="{{ url_for('logout') }}">
+                    Logout
+                </a>
+
+            </div>
+
+        </nav>
+
+
+        <!-- COURSE HEADER -->
+
+        <section class="course-header">
+
+            <div class="course-header-icon">
+                {{ course.icon }}
+            </div>
+
+            <div>
+
+                <p class="small-text">
+                    LearnPoint Course
+                </p>
+
+                <h1>
+                    {{ course.title }}
+                </h1>
+
+                <p>
+                    {{ course.description }}
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <!-- AI LEARNING ASSISTANT -->
+
+        <section class="ai-learning-section">
+
+            <div class="ai-learning-header">
+                <div>
+                    <p class="small-text">LearnPoint AI</p>
+                    <h2>What do you want to learn?</h2>
+                    <p>
+                        Ask anything about {{ course.title }} and get a
+                        simple explanation, examples, or guidance.
+                    </p>
+                </div>
+                <div class="ai-badge">✨ AI</div>
+            </div>
+
+            <form
+                id="ai-question-form"
+                class="ai-question-form"
+            >
+
+                <input
+                    type="text"
+                    id="ai-question"
+                    name="question"
+                    placeholder="Ask anything you want to learn..."
+                    autocomplete="off"
+                    required
+                >
+
+                <button
+                    type="submit"
+                    id="ai-ask-button"
+                >
+                    Ask AI
+                </button>
+
+            </form>
+
+            <div
+                id="ai-loading"
+                class="ai-loading"
+                hidden
+            >
+                Thinking...
+            </div>
+
+            <div
+                id="ai-error"
+                class="ai-error"
+                hidden
+            ></div>
+
+            <div
+                id="ai-answer"
+                class="ai-answer"
+                hidden
+            >
+                <h3>AI Explanation</h3>
+                <div id="ai-answer-text"></div>
+            </div>
+
+            <div
+                id="ai-videos"
+                class="ai-videos"
+                hidden
+            >
+                <h3>📺 Reference Videos</h3>
+                <p class="ai-videos-description">
+                    Find relevant videos and tutorials for this question.
+                </p>
+                <div id="ai-video-links"></div>
+            </div>
+
+        </section>
+
+
+        <!-- TOPICS TO STUDY -->
+
+        <section class="course-content">
+
+            <h2>
+                Topics to Study or Ask AI
+            </h2>
+
+            <p>
+                Explore the topics below or ask the LearnPoint AI assistant
+                anything you want to learn.
+            </p>
+
+            <div class="lesson-list">
+
+                {% for lesson in course.lessons %}
+
+                <div class="lesson-card">
+
+                    <div class="lesson-number">
+                        {{ "%02d" | format(loop.index) }}
+                    </div>
+
+                    <div class="lesson-info">
+                        <h3>
+                            {{ lesson.title }}
+                        </h3>
+
+                        <p>
+                            {{ lesson.description }}
+                        </p>
+                    </div>
+
+                </div>
+
+                {% endfor %}
+
+            </div>
+
+        </section>
+<!-- BACK -->
+
+        <div class="back-button">
+    <!-- COURSE COMPLETION -->
+    <section class="course-content" style="margin-top: 24px; margin-bottom: 18px;">
+        {% if completed %}
+            <div class="completed-badge" style="display: inline-block;">
+                ✓ Course Completed
+            </div>
+        {% else %}
+            <form method="POST" action="{{ url_for('complete_course', course_id=course_id) }}">
+                <button type="submit" class="course-button">
+                    ✓ Course Completed
+                </button>
+            </form>
+
+        {% endif %}
+    </section>
+
+
+            <a href="{{ url_for('dashboard') }}">
+                ← Back to Courses
+            </a>
+
+        </div>
+
+
+        <!-- FOOTER -->
+
+        <footer>
+
+            <p>
+                © 2026 LearnPoint
+            </p>
+
+            <p>
+                Learn. Practice. Grow.
+            </p>
+
+        </footer>
+
+    </div>
+
+
+    <!-- AI SCRIPT -->
+
+    <script>
+
+        const aiForm =
+            document.getElementById("ai-question-form");
+
+        const aiQuestion =
+            document.getElementById("ai-question");
+
+        const aiButton =
+            document.getElementById("ai-ask-button");
+
+        const aiLoading =
+            document.getElementById("ai-loading");
+
+        const aiError =
+            document.getElementById("ai-error");
+
+        const aiAnswer =
+            document.getElementById("ai-answer");
+
+        const aiAnswerText =
+            document.getElementById("ai-answer-text");
+
+        const aiVideos =
+            document.getElementById("ai-videos");
+
+        const aiVideoLinks =
+            document.getElementById("ai-video-links");
+
+
+        function escapeHtml(text) {
+
+            const div =
+                document.createElement("div");
+
+            div.textContent = text;
+
+            return div.innerHTML;
+        }
+
+
+        aiForm.addEventListener(
+            "submit",
+            async function(event) {
+
+                event.preventDefault();
+
+                const question =
+                    aiQuestion.value.trim();
+
+                if (!question) {
+                    return;
+                }
+
+                aiButton.disabled = true;
+                aiLoading.hidden = false;
+                aiError.hidden = true;
+                aiAnswer.hidden = true;
+                aiVideos.hidden = true;
+                aiVideoLinks.innerHTML = "";
+
+                try {
+
+                    const response =
+                        await fetch(
+                            "{{ url_for('ask_ai', course_id=course_id) }}",
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json"
+                                },
+                                body: JSON.stringify({
+                                    question: question
+                                })
+                            }
+                        );
+
+                    const data =
+                        await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            data.error ||
+                            "Unable to get an AI response."
+                        );
+                    }
+
+                    aiAnswerText.innerHTML =
+                        escapeHtml(data.answer)
+                            .replace(/\n/g, "<br>");
+
+                    aiAnswer.hidden = false;
+
+                    if (Array.isArray(data.videos) && data.videos.length) {
+
+                        data.videos.forEach(function(video) {
+
+                            const link = document.createElement("a");
+                            link.href = video.url;
+                            link.target = "_blank";
+                            link.rel = "noopener noreferrer";
+                            link.className = "ai-video-link";
+                            link.textContent = "▶ " + video.title;
+
+                            aiVideoLinks.appendChild(link);
+                        });
+
+                        aiVideos.hidden = false;
+                    }
+
+                } catch (error) {
+
+                    aiError.textContent =
+                        error.message;
+
+                    aiError.hidden = false;
+
+                } finally {
+
+                    aiLoading.hidden = true;
+                    aiButton.disabled = false;
+
+                }
+            }
+        );
+
+    </script>
+
+
+</body>
+
+</html>

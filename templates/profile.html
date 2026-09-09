@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LearnPoint - Profile</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="dashboard">
+    <nav class="navbar">
+        <div class="logo">LearnPoint</div>
+        <div class="nav-links">
+            <a href="{{ url_for('dashboard') }}">Courses</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </nav>
+
+    <main class="profile-page">
+        <section class="profile-header">
+            <p class="small-text">Account</p>
+            <h1>Your Profile</h1>
+            <p>Manage your personal information, password and account settings.</p>
+        </section>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash profile-flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="profile-grid">
+            <section class="profile-card">
+                <h2>Personal Information</h2>
+                <form method="POST">
+                    <input type="hidden" name="action" value="update_profile">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" value="{{ user.name }}" required>
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" value="{{ user.email }}" required>
+                    <button type="submit" class="auth-button">Save Changes</button>
+                </form>
+            </section>
+
+            <section class="profile-card">
+                <h2>Learning Summary</h2>
+                <div class="profile-stat"><span>Courses available</span><strong>{{ total_courses }}</strong></div>
+                <div class="profile-stat"><span>Courses completed</span><strong>{{ completed_courses }}</strong></div>
+                <p class="profile-note">Your learning progress is saved to your LearnPoint account.</p>
+            </section>
+
+            <section class="profile-card">
+                <h2>Completed Courses</h2>
+                {% if completed_course_items %}
+                    <div class="admin-course-list">
+                        {% for item in completed_course_items %}
+                            <div class="admin-course-item">
+                                <div><strong>{{ item.title }}</strong></div>
+                                <span class="completed-badge">✓ Completed</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="profile-note">No courses completed yet.</p>
+                {% endif %}
+            </section>
+
+            <section class="profile-card">
+                <h2>Change Password</h2>
+                <form method="POST">
+                    <input type="hidden" name="action" value="change_password">
+                    <label for="current_password">Current Password</label>
+                    <input type="password" id="current_password" name="current_password" required>
+                    <label for="new_password">New Password</label>
+                    <input type="password" id="new_password" name="new_password" minlength="8" required>
+                    <label for="confirm_password">Confirm New Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" minlength="8" required>
+                    <button type="submit" class="auth-button">Change Password</button>
+                </form>
+            </section>
+
+            <section class="profile-card danger-card">
+                <h2>Delete Account</h2>
+                <p>This permanently deletes your account and your saved course progress.</p>
+                <form method="POST" onsubmit="return confirm('Are you sure you want to permanently delete your LearnPoint account? This cannot be undone.');">
+                    <input type="hidden" name="action" value="delete_account">
+                    <label for="delete_password">Enter Password to Confirm</label>
+                    <input type="password" id="delete_password" name="password" required>
+                    <button type="submit" class="danger-button">Delete My Account</button>
+                </form>
+            </section>
+        </div>
+    </main>
+
+    <footer>
+        <p>© 2026 LearnPoint</p>
+        <p>Learn. Practice. Grow.</p>
+    </footer>
+</div>
+</body>
+</html>

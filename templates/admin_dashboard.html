@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LearnPoint - Admin Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+</head>
+<body>
+<div class="dashboard">
+    <nav class="navbar">
+        <div class="logo">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="LearnPoint Logo">
+            <span>LearnPoint Admin</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('admin_logout') }}">Logout</a>
+        </div>
+    </nav>
+
+    <main class="admin-content">
+        <section class="admin-welcome">
+            <p class="small-text">Administrator Portal</p>
+            <h1>Welcome, {{ admin.username }}</h1>
+            <p>Monitor users, course progress and the content available on LearnPoint.</p>
+        </section>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <section class="admin-stats">
+            <div class="admin-stat-card"><span class="admin-stat-icon">👥</span><div><strong>{{ total_users }}</strong><p>Registered Users</p></div></div>
+            <div class="admin-stat-card"><span class="admin-stat-icon">🟢</span><div><strong>{{ active_users }}</strong><p>Users Who Logged In</p></div></div>
+            <div class="admin-stat-card"><span class="admin-stat-icon">📚</span><div><strong>{{ courses|length }}</strong><p>Courses</p></div></div>
+            <div class="admin-stat-card"><span class="admin-stat-icon">🏆</span><div><strong>{{ completed_users }}</strong><p>Fully Completed Users</p></div></div>
+        </section>
+
+        <section class="admin-panel">
+            <div class="admin-panel-header">
+                <div>
+                    <h2>Registered Users</h2>
+                    <p>View and manage account information and learning progress.</p>
+                </div>
+            </div>
+
+            <form class="admin-search-form" method="GET" action="{{ url_for('admin_dashboard') }}">
+                <input type="search" name="search" value="{{ search }}" placeholder="Search by name or email">
+                <button type="submit">Search</button>
+                {% if search %}<a class="secondary-button" href="{{ url_for('admin_dashboard') }}">Clear</a>{% endif %}
+            </form>
+
+            <div class="admin-table-wrapper">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Name</th><th>Email</th><th>Role</th>
+                            <th>Progress</th><th>Completed</th><th>Last Login</th><th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in users %}
+                        <tr>
+                            <td>{{ row.user.id }}</td>
+                            <td>{{ row.user.name }}</td>
+                            <td>{{ row.user.email }}</td>
+                            <td><span class="role-badge">{{ row.user.role|default('user') }}</span></td>
+                            <td>{{ row.overall_progress }}%</td>
+                            <td>{{ row.completed_courses }}/{{ courses|length }}</td>
+                            <td>{% if row.user.last_login %}{{ row.user.last_login.strftime('%d %b %Y, %I:%M %p') }}{% else %}Never{% endif %}</td>
+                            <td>
+                                <div class="admin-actions">
+                                    <a class="small-action" href="{{ url_for('admin_user_detail', user_id=row.user.id) }}">View</a>
+                                    <form method="POST" action="{{ url_for('admin_delete_user', user_id=row.user.id) }}" onsubmit="return confirm('Delete this user and all their course progress? This cannot be undone.');">
+                                        <button class="small-action danger-small" type="submit">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="8">No users found.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="admin-panel">
+            <div class="admin-panel-header"><div><h2>Available Courses</h2><p>Courses currently configured in LearnPoint.</p></div></div>
+            <div class="admin-course-list">
+                {% for course in courses %}
+                <div class="admin-course-item">
+                    <div><strong>{{ course.title }}</strong><p>{{ course.description }}</p></div>
+                    <span class="course-id-badge">{{ course.id }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+    <footer><p>© 2026 LearnPoint</p><p>Learn. Practice. Grow.</p></footer>
+</div>
+</body>
+</html>

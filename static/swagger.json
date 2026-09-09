@@ -1,0 +1,401 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "LearnPoint API",
+    "description": "CRUD API for the LearnPoint learning platform",
+    "version": "1.0.0"
+  },
+  "basePath": "/api",
+  "schemes": [
+    "http"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/users": {
+      "get": {
+        "summary": "Get all users",
+        "responses": {
+          "200": {
+            "description": "Users retrieved successfully"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a user",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserCreate"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "User created successfully"
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "409": {
+            "description": "Email already registered"
+          }
+        }
+      }
+    },
+
+    "/users/{user_id}": {
+      "get": {
+        "summary": "Get user by ID",
+        "parameters": [
+          {
+            "$ref": "#/parameters/UserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User retrieved successfully"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update user",
+        "parameters": [
+          {
+            "$ref": "#/parameters/UserId"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UserUpdate"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User updated successfully"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete user",
+        "parameters": [
+          {
+            "$ref": "#/parameters/UserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted successfully"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+
+    "/courses": {
+      "get": {
+        "summary": "Get all courses",
+        "responses": {
+          "200": {
+            "description": "Courses retrieved successfully"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create course",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CourseCreate"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Course created successfully"
+          },
+          "400": {
+            "description": "Invalid course data"
+          }
+        }
+      }
+    },
+
+    "/courses/{course_id}": {
+      "get": {
+        "summary": "Get course by ID",
+        "parameters": [
+          {
+            "$ref": "#/parameters/CourseId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Course retrieved successfully"
+          },
+          "404": {
+            "description": "Course not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update course",
+        "parameters": [
+          {
+            "$ref": "#/parameters/CourseId"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CourseUpdate"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Course updated successfully"
+          },
+          "404": {
+            "description": "Course not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete course",
+        "parameters": [
+          {
+            "$ref": "#/parameters/CourseId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Course deleted successfully"
+          },
+          "404": {
+            "description": "Course not found"
+          }
+        }
+      }
+    },
+
+    "/users/{user_id}/progress": {
+      "get": {
+        "summary": "Get user progress",
+        "parameters": [
+          {
+            "$ref": "#/parameters/UserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Progress retrieved successfully"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+
+    "/users/{user_id}/progress/{course_id}": {
+      "put": {
+        "summary": "Update course progress",
+        "parameters": [
+          {
+            "$ref": "#/parameters/UserId"
+          },
+          {
+            "$ref": "#/parameters/CourseId"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ProgressUpdate"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Progress updated successfully"
+          },
+          "404": {
+            "description": "User or course not found"
+          }
+        }
+      }
+    }
+  },
+
+  "parameters": {
+    "UserId": {
+      "name": "user_id",
+      "in": "path",
+      "required": true,
+      "type": "integer",
+      "description": "User ID"
+    },
+    "CourseId": {
+      "name": "course_id",
+      "in": "path",
+      "required": true,
+      "type": "string",
+      "description": "Course ID"
+    }
+  },
+
+  "definitions": {
+    "User": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "example": 1
+        },
+        "name": {
+          "type": "string",
+          "example": "Samhita"
+        },
+        "email": {
+          "type": "string",
+          "example": "student@example.com"
+        }
+      }
+    },
+
+    "UserCreate": {
+      "type": "object",
+      "required": [
+        "name",
+        "email",
+        "password"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Samhita"
+        },
+        "email": {
+          "type": "string",
+          "example": "student@example.com"
+        },
+        "password": {
+          "type": "string",
+          "example": "password123"
+        }
+      }
+    },
+
+    "UserUpdate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "example": "Updated Name"
+        },
+        "email": {
+          "type": "string",
+          "example": "updated@example.com"
+        },
+        "password": {
+          "type": "string",
+          "example": "newpassword123"
+        }
+      }
+    },
+
+    "Course": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "python"
+        },
+        "title": {
+          "type": "string",
+          "example": "Python Programming"
+        },
+        "description": {
+          "type": "string",
+          "example": "Learn Python programming from basics."
+        }
+      }
+    },
+
+    "CourseCreate": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "python"
+        },
+        "title": {
+          "type": "string",
+          "example": "Python Programming"
+        },
+        "description": {
+          "type": "string",
+          "example": "Learn Python programming from basics."
+        }
+      }
+    },
+
+    "CourseUpdate": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "example": "Advanced Python"
+        },
+        "description": {
+          "type": "string",
+          "example": "Advanced Python programming."
+        }
+      }
+    },
+
+    "ProgressUpdate": {
+      "type": "object",
+      "required": [
+        "progress"
+      ],
+      "properties": {
+        "progress": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "example": 100
+        }
+      }
+    }
+  }
+}

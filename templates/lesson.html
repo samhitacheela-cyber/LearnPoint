@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>
+        LearnPoint - {{ lesson.title }}
+    </title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+    <div class="dashboard">
+
+
+        <!-- NAVBAR -->
+
+        <nav class="navbar">
+
+            <div class="logo">
+                LearnPoint
+            </div>
+
+            <div class="nav-links">
+
+                <a href="{{ url_for('profile') }}">Profile</a>
+
+                <a href="{{ url_for(
+                    'course',
+                    course_id=course_id
+                ) }}">
+                    Back to Course
+                </a>
+
+                <a href="{{ url_for('logout') }}">
+                    Logout
+                </a>
+
+            </div>
+
+        </nav>
+
+
+        <!-- LESSON -->
+
+        <section class="lesson-page">
+
+
+            <div class="lesson-icon">
+                {{ course.icon }}
+            </div>
+
+
+            <p class="small-text">
+                {{ course.name }}
+            </p>
+
+
+            <h1>
+                {{ lesson.title }}
+            </h1>
+
+
+            <p class="lesson-description">
+                {{ lesson.description }}
+            </p>
+
+
+            <!-- CONTENT -->
+
+            <div class="lesson-content">
+
+                <h2>
+                    Lesson Content
+                </h2>
+
+
+                <div class="lesson-text">
+
+                    {{ lesson.content }}
+
+                </div>
+
+            </div>
+
+
+            <!-- COMPLETE -->
+
+            {% if completed %}
+
+                <div class="already-completed">
+
+                    ✓ Lesson Completed
+
+                </div>
+
+            {% else %}
+
+                <form
+                    action="{{ url_for(
+                        'complete_lesson',
+                        course_id=course_id,
+                        lesson_number=lesson_number
+                    ) }}"
+                    method="POST"
+                >
+
+                    <button
+                        type="submit"
+                        class="complete-button"
+                    >
+
+                        ✓ Mark as Complete
+
+                    </button>
+
+                </form>
+
+            {% endif %}
+
+
+            <!-- NAVIGATION -->
+
+            <div class="lesson-navigation">
+
+
+                {% if lesson_number > 1 %}
+
+                    <a
+                        href="{{ url_for(
+                            'lesson',
+                            course_id=course_id,
+                            lesson_number=lesson_number - 1
+                        ) }}"
+                        class="secondary-button"
+                    >
+
+                        ← Previous
+
+                    </a>
+
+                {% endif %}
+
+
+                {% if lesson_number < course.lessons|length %}
+
+                    <a
+                        href="{{ url_for(
+                            'lesson',
+                            course_id=course_id,
+                            lesson_number=lesson_number + 1
+                        ) }}"
+                        class="secondary-button"
+                    >
+
+                        Next →
+
+                    </a>
+
+                {% endif %}
+
+
+            </div>
+
+
+            <!-- BACK -->
+
+            <div class="back-button">
+
+                <a
+                    href="{{ url_for(
+                        'course',
+                        course_id=course_id
+                    ) }}"
+                >
+
+                    ← Back to Course
+
+                </a>
+
+            </div>
+
+
+        </section>
+
+
+        <!-- FOOTER -->
+
+        <footer>
+
+            <p>
+                © 2026 LearnPoint
+            </p>
+
+            <p>
+                Learn. Practice. Grow.
+            </p>
+
+        </footer>
+
+    </div>
+
+</body>
+
+</html>

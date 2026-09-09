@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LearnPoint - User Details</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+</head>
+<body>
+<div class="dashboard">
+<nav class="navbar">
+<div class="logo"><img src="{{ url_for('static', filename='logo.png') }}" alt="LearnPoint Logo"><span>LearnPoint Admin</span></div>
+<div class="nav-links"><a href="{{ url_for('admin_dashboard') }}">Dashboard</a><a href="{{ url_for('admin_logout') }}">Logout</a></div>
+</nav>
+<main class="admin-content">
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
+<section class="admin-welcome"><p class="small-text">User Management</p><h1>{{ user.name }}</h1><p>{{ user.email }}</p></section>
+<section class="admin-stats">
+<div class="admin-stat-card"><span class="admin-stat-icon">🆔</span><div><strong>{{ user.id }}</strong><p>User ID</p></div></div>
+<div class="admin-stat-card"><span class="admin-stat-icon">📈</span><div><strong>{{ overall_progress }}%</strong><p>Overall Progress</p></div></div>
+<div class="admin-stat-card"><span class="admin-stat-icon">🏆</span><div><strong>{{ completed_courses }}/{{ user_courses|length }}</strong><p>Courses Completed</p></div></div>
+<div class="admin-stat-card"><span class="admin-stat-icon">👤</span><div><strong>{{ user.role|default('user') }}</strong><p>Role</p></div></div>
+</section>
+<section class="admin-panel">
+<div class="admin-panel-header"><div><h2>Account Information</h2><p>Administrative information only. Passwords are never displayed.</p></div></div>
+<div class="admin-user-info"><p><strong>Name:</strong> {{ user.name }}</p><p><strong>Email:</strong> {{ user.email }}</p><p><strong>Role:</strong> {{ user.role|default('user') }}</p><p><strong>Registered:</strong> {% if user.created_at %}{{ user.created_at.strftime('%d %b %Y, %I:%M %p') }}{% else %}Not available{% endif %}</p><p><strong>Last Login:</strong> {% if user.last_login %}{{ user.last_login.strftime('%d %b %Y, %I:%M %p') }}{% else %}Never{% endif %}</p></div>
+</section>
+<section class="admin-panel">
+<div class="admin-panel-header"><div><h2>Course Progress</h2><p>Monitor this user's learning activity.</p></div></div>
+<div class="admin-course-list">
+{% for item in user_courses %}<div class="admin-course-item"><div><strong>{{ item.title }}</strong><div class="admin-progress-bar"><div style="width: {{ item.progress }}%"></div></div><p>{{ item.progress }}% complete</p></div>{% if item.completed %}<span class="completed-badge">✓ Completed</span>{% else %}<span class="course-id-badge">Not Completed</span>{% endif %}</div>{% endfor %}
+</div>
+</section>
+<section class="admin-panel admin-management-panel">
+<div class="admin-panel-header"><div><h2>Account Management</h2><p>The user's current password cannot be viewed. Use a reset link when password assistance is needed.</p></div></div>
+<div class="admin-management-actions">
+<form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user.id) }}"><button class="course-button" type="submit">Send Password Reset</button></form>
+<form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('Delete this user and all their course progress? This cannot be undone.');"><button class="danger-button" type="submit">Delete User</button></form>
+</div>
+</section>
+<div class="back-button"><a href="{{ url_for('admin_dashboard') }}">← Back to Admin Dashboard</a></div>
+</main>
+<footer><p>© 2026 LearnPoint</p><p>Learn. Practice. Grow.</p></footer>
+</div>
+</body>
+</html>
