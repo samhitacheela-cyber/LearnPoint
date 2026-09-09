@@ -8,26 +8,22 @@ from flask import (
     jsonify,
     flash
 )
-
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import inspect, text, or_
+from course_data import COURSES
+from sqlalchemy import or_
 from flask_swagger_ui import get_swaggerui_blueprint
-
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import os
 import secrets
-import hashlib
-import smtplib
-from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 load_dotenv()
 
-try:
-    from google import genai
-except ImportError:
-    genai = None
+from database import db, User, Admin, Course, Progress, initialize_database
+from course_data import COURSES
+from email_utils import hash_reset_token, send_password_reset_email
+from api_routes import api_bp
+from ai_assistant import register_ai_routes
 
 
 # --------------------------------------------------
@@ -35,24 +31,13 @@ except ImportError:
 # --------------------------------------------------
 
 app = Flask(__name__)
-
-app.config["SECRET_KEY"] = "learnpoint-secret-key"
-
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///database.db"
-)
-
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "learnpoint-secret-key")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///database.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
 
-db = SQLAlchemy(app)
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if genai and GEMINI_API_KEY:
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-else:
-    gemini_client = None
+with app.app_context():
+    initialize_database()
 
 
 # --------------------------------------------------
@@ -60,314 +45,14 @@ else:
 # --------------------------------------------------
 
 SWAGGER_URL = "/swagger"
-
 API_URL = "/static/swagger.json"
-
 swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
     API_URL,
-    config={
-        "app_name": "LearnPoint API"
-    }
+    config={"app_name": "LearnPoint API"}
 )
-
-app.register_blueprint(
-    swaggerui_blueprint,
-    url_prefix=SWAGGER_URL
-)
-
-
-# --------------------------------------------------
-# DATABASE MODELS
-# --------------------------------------------------
-
-class User(db.Model):
-
-    id = db.Column(
-        db.Integer,
-        primary_key=True
-    )
-
-    name = db.Column(
-        db.String(100),
-        nullable=False
-    )
-
-    email = db.Column(
-        db.String(120),
-        unique=True,
-        nullable=False
-    )
-
-    password_hash = db.Column(
-        db.String(255),
-        nullable=False
-    )
-
-    role = db.Column(
-        db.String(20),
-        nullable=False,
-        default="user"
-    )
-
-    created_at = db.Column(
-        db.DateTime,
-        nullable=True,
-        default=datetime.utcnow
-    )
-
-    last_login = db.Column(
-        db.DateTime,
-        nullable=True
-    )
-
-    reset_token_hash = db.Column(
-        db.String(64),
-        nullable=True
-    )
-
-    reset_token_expires_at = db.Column(
-        db.Integer,
-        nullable=True
-    )
-
-
-class Admin(db.Model):
-
-    id = db.Column(
-        db.Integer,
-        primary_key=True
-    )
-
-    username = db.Column(
-        db.String(100),
-        unique=True,
-        nullable=False
-    )
-
-    password_hash = db.Column(
-        db.String(255),
-        nullable=False
-    )
-
-
-class Course(db.Model):
-
-    id = db.Column(
-        db.String(100),
-        primary_key=True
-    )
-
-    title = db.Column(
-        db.String(150),
-        nullable=False
-    )
-
-    description = db.Column(
-        db.Text,
-        nullable=False
-    )
-
-
-class Progress(db.Model):
-
-    id = db.Column(
-        db.Integer,
-        primary_key=True
-    )
-
-    user_id = db.Column(
-        db.Integer,
-        db.ForeignKey("user.id"),
-        nullable=False
-    )
-
-    course_id = db.Column(
-        db.String(100),
-        db.ForeignKey("course.id"),
-        nullable=False
-    )
-
-    progress = db.Column(
-        db.Integer,
-        default=0
-    )
-
-    completed = db.Column(
-        db.Boolean,
-        default=False,
-        nullable=False
-    )
-
-    __table_args__ = (
-        db.UniqueConstraint(
-            "user_id",
-            "course_id",
-            name="unique_user_course"
-        ),
-    )
-
-
-# --------------------------------------------------
-# COURSE DATA
-# --------------------------------------------------
-
-
-
-
-# --------------------------------------------------
-# CREATE DATABASE AND COURSES
-# --------------------------------------------------
-
-def initialize_database():
-
-    db.create_all()
-
-    # Add the role column to an existing database created
-    # before role-based authentication was introduced.
-    try:
-        inspector = inspect(db.engine)
-        user_columns = {
-            column["name"]
-            for column in inspector.get_columns("user")
-        }
-
-        if "role" not in user_columns:
-            with db.engine.begin() as connection:
-                connection.execute(
-                    text(
-                        "ALTER TABLE user "
-                        "ADD COLUMN role VARCHAR(20) "
-                        "NOT NULL DEFAULT 'user'"
-                    )
-                )
-    except Exception:
-        # Do not prevent the application from starting if the
-        # database engine does not allow the migration statement.
-        pass
-
-    # Add password-reset fields to existing databases.
-    try:
-        inspector = inspect(db.engine)
-        user_columns = {
-            column["name"]
-            for column in inspector.get_columns("user")
-        }
-
-        with db.engine.begin() as connection:
-            if "reset_token_hash" not in user_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE user "
-                        "ADD COLUMN reset_token_hash VARCHAR(64)"
-                    )
-                )
-
-            if "reset_token_expires_at" not in user_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE user "
-                        "ADD COLUMN reset_token_expires_at INTEGER"
-                    )
-                )
-    except Exception:
-        # Existing deployments may use a database engine with
-        # different ALTER TABLE limitations.
-        pass
-
-    # Add account monitoring fields to existing databases.
-    try:
-        inspector = inspect(db.engine)
-        user_columns = {
-            column["name"]
-            for column in inspector.get_columns("user")
-        }
-
-        with db.engine.begin() as connection:
-            if "created_at" not in user_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE user "
-                        "ADD COLUMN created_at DATETIME"
-                    )
-                )
-
-            if "last_login" not in user_columns:
-                connection.execute(
-                    text(
-                        "ALTER TABLE user "
-                        "ADD COLUMN last_login DATETIME"
-                    )
-                )
-    except Exception:
-        pass
-
-    # Add explicit course-completion status to existing databases.
-    try:
-        inspector = inspect(db.engine)
-        progress_columns = {column["name"] for column in inspector.get_columns("progress")}
-        if "completed" not in progress_columns:
-            with db.engine.begin() as connection:
-                connection.execute(text(
-                    "ALTER TABLE progress ADD COLUMN completed BOOLEAN NOT NULL DEFAULT FALSE"
-                ))
-            with db.engine.begin() as connection:
-                connection.execute(text(
-                    "UPDATE progress SET completed = TRUE WHERE progress >= 100"
-                ))
-    except Exception:
-        pass
-
-    for course_id, course_data in COURSE_DATA.items():
-
-        existing_course = db.session.get(
-            Course,
-            course_id
-        )
-
-        if existing_course is None:
-
-            course = Course(
-                id=course_id,
-                title=course_data["title"],
-                description=course_data["description"]
-            )
-
-            db.session.add(course)
-
-    # Create a separate administrator account.
-    admin_username = os.getenv(
-        "ADMIN_USERNAME",
-        "admin"
-    )
-
-    admin_password = os.getenv(
-        "ADMIN_PASSWORD",
-        "admin123"
-    )
-
-    existing_admin = Admin.query.filter_by(
-        username=admin_username
-    ).first()
-
-    if existing_admin is None:
-
-        db.session.add(
-            Admin(
-                username=admin_username,
-                password_hash=generate_password_hash(
-                    admin_password
-                )
-            )
-        )
-
-    db.session.commit()
-
-
-with app.app_context():
-
-    initialize_database()
-
+app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
+app.register_blueprint(api_bp)
 
 # --------------------------------------------------
 # HELPER FUNCTIONS
@@ -400,7 +85,7 @@ def get_course_progress(user_id):
             record.course_id
         ] = record.progress
 
-    for course_id in COURSE_DATA:
+    for course_id in COURSES:
 
         if course_id not in progress_dict:
 
@@ -424,47 +109,6 @@ def get_user_course_progress(
         return record.progress
 
     return 0
-
-
-def _hash_reset_token(token):
-
-    return hashlib.sha256(
-        token.encode("utf-8")
-    ).hexdigest()
-
-
-def _send_password_reset_email(user, reset_url):
-
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_username = os.getenv("SMTP_USERNAME")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    smtp_from = os.getenv("SMTP_FROM", smtp_username or "")
-    use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
-
-    if not smtp_host or not smtp_username or not smtp_password or not smtp_from:
-        return False
-
-    message = EmailMessage()
-    message["Subject"] = "LearnPoint Password Reset"
-    message["From"] = smtp_from
-    message["To"] = user.email
-    message.set_content(
-        "Hello " + user.name + ",\n\n"
-        "We received a request to reset your LearnPoint password.\n\n"
-        "Use this link to create a new password:\n"
-        + reset_url
-        + "\n\nThis link expires in 30 minutes. If you did not request this, you can ignore this email.\n\n"
-        "LearnPoint\nLearn. Practice. Grow."
-    )
-
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-        if use_tls:
-            server.starttls()
-        server.login(smtp_username, smtp_password)
-        server.send_message(message)
-
-    return True
 
 
 # --------------------------------------------------
@@ -652,7 +296,7 @@ def forgot_password():
         # whether an email address is registered.
         if user:
             token = secrets.token_urlsafe(32)
-            user.reset_token_hash = _hash_reset_token(token)
+            user.reset_token_hash = hash_reset_token(token)
             user.reset_token_expires_at = int(
                 (datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp()
             )
@@ -665,7 +309,7 @@ def forgot_password():
             )
 
             try:
-                sent = _send_password_reset_email(user, reset_url)
+                sent = send_password_reset_email(user, reset_url)
             except Exception:
                 app.logger.exception("Password reset email failed")
                 sent = False
@@ -692,7 +336,7 @@ def forgot_password():
 @app.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
 
-    token_hash = _hash_reset_token(token)
+    token_hash = hash_reset_token(token)
     user = User.query.filter_by(
         reset_token_hash=token_hash
     ).first()
@@ -808,7 +452,7 @@ def profile():
     completion_map = {record.course_id: bool(record.completed) for record in progress_records}
 
     completed_course_items = []
-    for course_id, course_data in COURSE_DATA.items():
+    for course_id, course_data in COURSES.items():
         if completion_map.get(course_id, False):
             completed_course_items.append({
                 "title": course_data["title"],
@@ -822,7 +466,7 @@ def profile():
         user=user,
         completed_courses=completed_courses,
         completed_course_items=completed_course_items,
-        total_courses=len(COURSE_DATA)
+        total_courses=len(COURSES)
     )
 
 
@@ -924,12 +568,12 @@ def admin_dashboard():
     for user in users:
         completed = sum(
             1
-            for course_id in COURSE_DATA
+            for course_id in COURSES
             if completion_map.get((user.id, course_id), False)
         )
         progress_values = [
             progress_map.get((user.id, course_id), 0)
-            for course_id in COURSE_DATA
+            for course_id in COURSES
         ]
         overall_progress = round(
             sum(progress_values) / len(progress_values)
@@ -946,7 +590,7 @@ def admin_dashboard():
     completed_courses_total = sum(
         1
         for row in user_rows
-        if row["completed_courses"] == len(COURSE_DATA) and len(COURSE_DATA) > 0
+        if row["completed_courses"] == len(COURSES) and len(COURSES) > 0
     )
 
     return render_template(
@@ -983,7 +627,7 @@ def admin_user_detail(user_id):
     completion_map = {record.course_id: bool(record.completed) for record in progress_records}
 
     user_courses = []
-    for course_id, course_data in COURSE_DATA.items():
+    for course_id, course_data in COURSES.items():
         user_courses.append({
             "title": course_data["title"],
             "course_id": course_id,
@@ -1044,7 +688,7 @@ def admin_reset_user_password(user_id):
         return redirect(url_for("admin_dashboard"))
 
     token = secrets.token_urlsafe(32)
-    user.reset_token_hash = _hash_reset_token(token)
+    user.reset_token_hash = hash_reset_token(token)
     user.reset_token_expires_at = int(
         (datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp()
     )
@@ -1057,7 +701,7 @@ def admin_reset_user_password(user_id):
     )
 
     try:
-        sent = _send_password_reset_email(user, reset_url)
+        sent = send_password_reset_email(user, reset_url)
     except Exception:
         app.logger.exception("Admin password reset email failed")
         sent = False
@@ -1085,158 +729,6 @@ def admin_logout():
     return redirect(
         url_for("admin_login")
     )
-
-
-# --------------------------------------------------
-# GEMINI AI LEARNING ASSISTANT
-# --------------------------------------------------
-
-@app.route(
-    "/api/ask-ai/<course_id>",
-    methods=["POST"]
-)
-def ask_ai(course_id):
-
-    user = get_logged_in_user()
-
-    if not user:
-        return jsonify(
-            {
-                "error": "Please login first."
-            }
-        ), 401
-
-    if course_id not in COURSE_DATA:
-        return jsonify(
-            {
-                "error": "Course not found."
-            }
-        ), 404
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    question = str(
-        data.get("question", "")
-    ).strip()
-
-    if not question:
-        return jsonify(
-            {
-                "error": "Please enter a question."
-            }
-        ), 400
-
-    if len(question) > 2000:
-        return jsonify(
-            {
-                "error": "Question is too long."
-            }
-        ), 400
-
-    if gemini_client is None:
-        return jsonify(
-            {
-                "error": (
-                    "Gemini AI is not configured. "
-                    "Add GEMINI_API_KEY to the environment variables."
-                )
-            }
-        ), 503
-
-    course_data = COURSE_DATA[course_id]
-
-    lesson_topics = ", ".join(
-        lesson["title"]
-        for lesson in course_data["lessons"]
-    )
-
-    prompt = f"""
-You are the LearnPoint AI Learning Assistant.
-
-The student is currently learning:
-Course: {course_data["title"]}
-Course description: {course_data["description"]}
-Available lesson topics: {lesson_topics}
-
-Student question:
-{question}
-
-Answer the student's question clearly and accurately.
-Use simple, student-friendly language.
-Give examples when useful.
-If the question is related to the current course, prioritize
-that course context.
-If it is unrelated, you may still answer it, but briefly
-mention that it is outside the current course.
-Do not claim that the answer comes from LearnPoint course
-material unless it is actually provided in the context above.
-"""
-
-    try:
-
-        response = gemini_client.models.generate_content(
-            model="gemini-3.7-flash",
-            contents=prompt
-        )
-
-        answer = response.text
-
-        # Build reliable reference-search links instead of asking the AI
-        # to invent video URLs. These open live Google Video and YouTube
-        # search results for the student's exact question and course.
-        from urllib.parse import quote_plus
-
-        search_queries = [
-            f"{course_data["title"]} {question}",
-            question,
-            f"{course_data["title"]} tutorial for beginners"
-        ]
-
-        videos = []
-
-        for query in search_queries:
-            videos.append(
-                {
-                    "title": f"Search Google Videos: {query}",
-                    "url": (
-                        "https://www.google.com/search?tbm=vid&q="
-                        + quote_plus(query)
-                    )
-                }
-            )
-            videos.append(
-                {
-                    "title": f"Search YouTube: {query}",
-                    "url": (
-                        "https://www.youtube.com/results?search_query="
-                        + quote_plus(query)
-                    )
-                }
-            )
-
-        return jsonify(
-            {
-                "answer": answer,
-                "videos": videos
-            }
-        ), 200
-
-    except Exception as error:
-
-        app.logger.exception(
-            "Gemini request failed"
-        )
-
-        return jsonify(
-            {
-                "error": (
-                    "The AI assistant could not answer right now. "
-                    "Please try again."
-                )
-            }
-        ), 500
 
 
 # --------------------------------------------------
@@ -1274,12 +766,13 @@ def dashboard():
 
     courses = []
 
-    for course_id, course_data in COURSE_DATA.items():
+    for course_id, course_data in COURSES.items():
 
         courses.append(
             {
                 "id": course_id,
                 "title": course_data["title"],
+                "category": course_data["category"],
                 "description": course_data["description"],
                 "icon": course_data["icon"],
                 "progress": course_progress.get(
@@ -1314,11 +807,11 @@ def course(course_id):
             url_for("login")
         )
 
-    if course_id not in COURSE_DATA:
+    if course_id not in COURSES:
 
         return "Course not found", 404
 
-    course_data = COURSE_DATA[
+    course_data = COURSES[
         course_id
     ]
 
@@ -1355,7 +848,7 @@ def complete_course(course_id):
     if not user:
         return redirect(url_for("login"))
 
-    if course_id not in COURSE_DATA:
+    if course_id not in COURSES:
         return "Course not found", 404
 
     progress_record = Progress.query.filter_by(
@@ -1394,11 +887,11 @@ def lesson(
             url_for("login")
         )
 
-    if course_id not in COURSE_DATA:
+    if course_id not in COURSES:
 
         return "Course not found", 404
 
-    course_data = COURSE_DATA[
+    course_data = COURSES[
         course_id
     ]
 
@@ -1451,11 +944,11 @@ def complete_lesson(
             url_for("login")
         )
 
-    if course_id not in COURSE_DATA:
+    if course_id not in COURSES:
 
         return "Course not found", 404
 
-    lessons = COURSE_DATA[
+    lessons = COURSES[
         course_id
     ]["lessons"]
 
@@ -1513,669 +1006,7 @@ def complete_lesson(
     )
 
 
-# ==================================================
-# API - USERS
-# ==================================================
-
-
-# --------------------------------------------------
-# GET ALL USERS
-# --------------------------------------------------
-
-@app.route(
-    "/api/users",
-    methods=["GET"]
-)
-def api_get_users():
-
-    users = User.query.all()
-
-    result = []
-
-    for user in users:
-
-        result.append(
-            {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email
-            }
-        )
-
-    return jsonify(result), 200
-
-
-# --------------------------------------------------
-# CREATE USER
-# --------------------------------------------------
-
-@app.route(
-    "/api/users",
-    methods=["POST"]
-)
-def api_create_user():
-
-    data = request.get_json(
-        force=True
-    )
-
-    if not data:
-
-        return jsonify(
-            {
-                "error": "JSON body is required"
-            }
-        ), 400
-
-    name = data.get(
-        "name"
-    )
-
-    email = data.get(
-        "email"
-    )
-
-    password = data.get(
-        "password"
-    )
-
-    if not name or not email or not password:
-
-        return jsonify(
-            {
-                "error": (
-                    "name, email and password "
-                    "are required"
-                )
-            }
-        ), 400
-
-    email = email.strip().lower()
-
-    existing_user = User.query.filter_by(
-        email=email
-    ).first()
-
-    if existing_user:
-
-        return jsonify(
-            {
-                "error": "Email already registered"
-            }
-        ), 409
-
-    user = User(
-        name=name,
-        email=email,
-        password_hash=generate_password_hash(
-            password
-        )
-    )
-
-    db.session.add(user)
-
-    db.session.commit()
-
-    return jsonify(
-        {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email
-        }
-    ), 201
-
-
-# --------------------------------------------------
-# GET USER
-# --------------------------------------------------
-
-@app.route(
-    "/api/users/<int:user_id>",
-    methods=["GET"]
-)
-def api_get_user(user_id):
-
-    user = db.session.get(
-        User,
-        user_id
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error": "User not found"
-            }
-        ), 404
-
-    return jsonify(
-        {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email
-        }
-    ), 200
-
-
-# --------------------------------------------------
-# UPDATE USER
-# --------------------------------------------------
-
-@app.route(
-    "/api/users/<int:user_id>",
-    methods=["PUT"]
-)
-def api_update_user(user_id):
-
-    user = db.session.get(
-        User,
-        user_id
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error": "User not found"
-            }
-        ), 404
-
-    data = request.get_json(
-        silent=True
-    )
-
-    if not data:
-
-        return jsonify(
-            {
-                "error": "JSON body is required"
-            }
-        ), 400
-
-    if "name" in data:
-
-        user.name = data["name"]
-
-    if "email" in data:
-
-        new_email = data["email"].strip().lower()
-
-        existing_user = User.query.filter(
-            User.email == new_email,
-            User.id != user_id
-        ).first()
-
-        if existing_user:
-
-            return jsonify(
-                {
-                    "error": "Email already registered"
-                }
-            ), 409
-
-        user.email = new_email
-
-    if "password" in data:
-
-        user.password_hash = generate_password_hash(
-            data["password"]
-        )
-
-    db.session.commit()
-
-    return jsonify(
-        {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email
-        }
-    ), 200
-
-
-# --------------------------------------------------
-# DELETE USER
-# --------------------------------------------------
-
-@app.route(
-    "/api/users/<int:user_id>",
-    methods=["DELETE"]
-)
-def api_delete_user(user_id):
-
-    user = db.session.get(
-        User,
-        user_id
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error": "User not found"
-            }
-        ), 404
-
-    Progress.query.filter_by(
-        user_id=user_id
-    ).delete()
-
-    db.session.delete(user)
-
-    db.session.commit()
-
-    return jsonify(
-        {
-            "message": "User deleted successfully"
-        }
-    ), 200
-
-
-# ==================================================
-# API - COURSES
-# ==================================================
-
-
-# --------------------------------------------------
-# GET ALL COURSES
-# --------------------------------------------------
-
-@app.route(
-    "/api/courses",
-    methods=["GET"]
-)
-def api_get_courses():
-
-    courses = Course.query.all()
-
-    result = []
-
-    for course_item in courses:
-
-        result.append(
-            {
-                "id": course_item.id,
-                "title": course_item.title,
-                "description": course_item.description
-            }
-        )
-
-    return jsonify(result), 200
-
-
-# --------------------------------------------------
-# CREATE COURSE
-# --------------------------------------------------
-
-@app.route(
-    "/api/courses",
-    methods=["POST"]
-)
-def api_create_course():
-
-    data = request.get_json(
-        silent=True
-    )
-
-    if not data:
-
-        return jsonify(
-            {
-                "error": "JSON body is required"
-            }
-        ), 400
-
-    course_id = data.get(
-        "id"
-    )
-
-    title = data.get(
-        "title"
-    )
-
-    description = data.get(
-        "description"
-    )
-
-    if not course_id or not title or not description:
-
-        return jsonify(
-            {
-                "error": (
-                    "id, title and description "
-                    "are required"
-                )
-            }
-        ), 400
-
-    existing_course = db.session.get(
-        Course,
-        course_id
-    )
-
-    if existing_course:
-
-        return jsonify(
-            {
-                "error": "Course already exists"
-            }
-        ), 409
-
-    course_item = Course(
-        id=course_id,
-        title=title,
-        description=description
-    )
-
-    db.session.add(course_item)
-
-    db.session.commit()
-
-    return jsonify(
-        {
-            "id": course_item.id,
-            "title": course_item.title,
-            "description": course_item.description
-        }
-    ), 201
-
-
-# --------------------------------------------------
-# GET COURSE
-# --------------------------------------------------
-
-@app.route(
-    "/api/courses/<course_id>",
-    methods=["GET"]
-)
-def api_get_course(course_id):
-
-    course_item = db.session.get(
-        Course,
-        course_id
-    )
-
-    if not course_item:
-
-        return jsonify(
-            {
-                "error": "Course not found"
-            }
-        ), 404
-
-    return jsonify(
-        {
-            "id": course_item.id,
-            "title": course_item.title,
-            "description": course_item.description
-        }
-    ), 200
-
-
-# --------------------------------------------------
-# UPDATE COURSE
-# --------------------------------------------------
-
-@app.route(
-    "/api/courses/<course_id>",
-    methods=["PUT"]
-)
-def api_update_course(course_id):
-
-    course_item = db.session.get(
-        Course,
-        course_id
-    )
-
-    if not course_item:
-
-        return jsonify(
-            {
-                "error": "Course not found"
-            }
-        ), 404
-
-    data = request.get_json(
-        silent=True
-    )
-
-    if not data:
-
-        return jsonify(
-            {
-                "error": "JSON body is required"
-            }
-        ), 400
-
-    if "title" in data:
-
-        course_item.title = data["title"]
-
-    if "description" in data:
-
-        course_item.description = data[
-            "description"
-        ]
-
-    db.session.commit()
-
-    return jsonify(
-        {
-            "id": course_item.id,
-            "title": course_item.title,
-            "description": course_item.description
-        }
-    ), 200
-
-
-# --------------------------------------------------
-# DELETE COURSE
-# --------------------------------------------------
-
-@app.route(
-    "/api/courses/<course_id>",
-    methods=["DELETE"]
-)
-def api_delete_course(course_id):
-
-    course_item = db.session.get(
-        Course,
-        course_id
-    )
-
-    if not course_item:
-
-        return jsonify(
-            {
-                "error": "Course not found"
-            }
-        ), 404
-
-    Progress.query.filter_by(
-        course_id=course_id
-    ).delete()
-
-    db.session.delete(course_item)
-
-    db.session.commit()
-
-    return jsonify(
-        {
-            "message": "Course deleted successfully"
-        }
-    ), 200
-
-
-# ==================================================
-# API - PROGRESS
-# ==================================================
-
-
-# --------------------------------------------------
-# GET USER PROGRESS
-# --------------------------------------------------
-
-@app.route(
-    "/api/users/<int:user_id>/progress",
-    methods=["GET"]
-)
-def api_get_progress(user_id):
-
-    user = db.session.get(
-        User,
-        user_id
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error": "User not found"
-            }
-        ), 404
-
-    records = Progress.query.filter_by(
-        user_id=user_id
-    ).all()
-
-    result = []
-
-    for record in records:
-
-        result.append(
-            {
-                "course_id": record.course_id,
-                "progress": record.progress,
-                "completed": bool(record.completed)
-            }
-        )
-
-    for course_id in COURSE_DATA:
-
-        found = False
-
-        for record in result:
-
-            if record["course_id"] == course_id:
-
-                found = True
-
-                break
-
-        if not found:
-
-            result.append(
-                {
-                    "course_id": course_id,
-                    "progress": 0
-                }
-            )
-
-    return jsonify(result), 200
-
-
-# --------------------------------------------------
-# UPDATE COURSE PROGRESS
-# --------------------------------------------------
-
-@app.route(
-    "/api/users/<int:user_id>/progress/<course_id>",
-    methods=["PUT"]
-)
-def api_update_progress(
-    user_id,
-    course_id
-):
-
-    user = db.session.get(
-        User,
-        user_id
-    )
-
-    if not user:
-
-        return jsonify(
-            {
-                "error": "User not found"
-            }
-        ), 404
-
-    course_item = db.session.get(
-        Course,
-        course_id
-    )
-
-    if not course_item:
-
-        return jsonify(
-            {
-                "error": "Course not found"
-            }
-        ), 404
-
-    data = request.get_json(
-        silent=True
-    )
-
-    if not data or "progress" not in data:
-
-        return jsonify(
-            {
-                "error": "progress is required"
-            }
-        ), 400
-
-    progress_value = data["progress"]
-
-    if not isinstance(
-        progress_value,
-        int
-    ):
-
-        return jsonify(
-            {
-                "error": "progress must be an integer"
-            }
-        ), 400
-
-    if progress_value < 0 or progress_value > 100:
-
-        return jsonify(
-            {
-                "error": (
-                    "progress must be between "
-                    "0 and 100"
-                )
-            }
-        ), 400
-
-    record = Progress.query.filter_by(
-        user_id=user_id,
-        course_id=course_id
-    ).first()
-
-    if record is None:
-
-        record = Progress(
-            user_id=user_id,
-            course_id=course_id,
-            progress=progress_value
-        )
-
-        db.session.add(record)
-
-    else:
-
-        record.progress = progress_value
-
-    db.session.commit()
-
-    return jsonify(
-        {
-            "user_id": user_id,
-            "course_id": course_id,
-            "progress": record.progress
-        }
-    ), 200
+register_ai_routes(app, get_logged_in_user, COURSES)
 
 
 # --------------------------------------------------

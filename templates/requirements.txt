@@ -1,7 +1,0 @@
-Flask
-Flask-SQLAlchemy
-flask-swagger-ui
-Werkzeug
-PyMySQL
-google-genai
-python-dotenv
