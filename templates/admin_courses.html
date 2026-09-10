@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LearnPoint - Courses</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"><link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}"></head>
+<body class="admin-page"><div class="dashboard"><nav class="navbar">
+<div class="logo"><img src="{{ url_for('static', filename='logo.png') }}" alt="LearnPoint Logo"><span>LearnPoint Admin</span></div>
+<div class="nav-links">
+<div class="nav-dropdown">
+<button class="nav-dropdown-button" type="button">Courses <span>▾</span></button>
+<div class="nav-dropdown-menu">
+<a href="{{ url_for('admin_courses') }}">Manage Courses</a>
+<a href="{{ url_for('admin_courses') }}#add-course">Add Course</a>
+</div>
+</div>
+<a href="{{ url_for('admin_users') }}">Registered Users</a>
+<a href="{{ url_for('admin_notices') }}">Notices</a>
+<a href="{{ url_for('admin_logout') }}">Logout</a>
+</div>
+</nav>
+<main class="admin-content">
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
+<section class="admin-welcome"><p class="small-text">Course Management</p><h1>Courses</h1><p>Add courses and manage their subjects for LearnPoint.</p></section>
+<section class="admin-panel" id="add-course"><div class="admin-panel-header"><div><h2>Add Course</h2><p>Create a new course that will appear for every user.</p></div></div>
+<form class="admin-form-grid" method="POST" action="{{ url_for('admin_add_course') }}">
+<input name="course_id" placeholder="Course ID (e.g. data-science)" required><input name="title" placeholder="Course title" required>
+<input name="category" placeholder="Category" value="Computer Science" required><input name="icon" placeholder="Icon" value="📚">
+<textarea name="description" placeholder="Course description" rows="3" required></textarea><button class="auth-button" type="submit">Add Course</button>
+</form></section>
+<section class="admin-panel"><div class="admin-panel-header"><div><h2>Courses & Subjects</h2><p>Add subjects or remove courses from LearnPoint.</p></div></div>
+<div class="admin-course-list">
+{% for course in courses %}<div class="admin-course-item course-management-item">
+<div class="course-management-main"><strong>{{ course.icon }} {{ course.title }}</strong><p>{{ course.description }}</p><span class="course-id-badge">{{ course.id }}</span></div>
+<div class="course-management-actions">
+<form class="subject-form" method="POST" action="{{ url_for('admin_add_subject', course_id=course.id) }}">
+<input name="title" placeholder="Subject title" required><input name="description" placeholder="Short description" required>
+<textarea name="content" placeholder="Subject content (optional)" rows="2"></textarea><button class="small-action" type="submit">Add Subject</button></form>
+<form method="POST" action="{{ url_for('admin_delete_course', course_id=course.id) }}" onsubmit="return confirm('Delete this course and its progress?');"><button class="small-action danger-small" type="submit">Delete Course</button></form>
+</div>
+{% if course.lessons %}<div class="subject-list"><strong>Subjects</strong>
+{% for subject in course.lessons %}<div class="subject-item"><span>{{ subject.number }}. {{ subject.title }}</span><span>{{ subject.description }}</span>
+<form method="POST" action="{{ url_for('admin_delete_subject', course_id=course.id, subject_number=subject.number) }}" onsubmit="return confirm('Delete this subject?');"><button class="small-action danger-small" type="submit">Delete</button></form></div>{% endfor %}
+</div>{% else %}<p class="profile-note">No subjects added yet.</p>{% endif %}
+</div>{% else %}<p>No courses available.</p>{% endfor %}
+</div></section></main>
+<footer><p>© 2026 LearnPoint</p><p>Learn. Practice. Grow.</p></footer></div></body></html>

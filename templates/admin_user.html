@@ -7,11 +7,22 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
 </head>
-<body>
+<body class="admin-page">
 <div class="dashboard">
 <nav class="navbar">
 <div class="logo"><img src="{{ url_for('static', filename='logo.png') }}" alt="LearnPoint Logo"><span>LearnPoint Admin</span></div>
-<div class="nav-links"><a href="{{ url_for('admin_dashboard') }}">Dashboard</a><a href="{{ url_for('admin_logout') }}">Logout</a></div>
+<div class="nav-links">
+<div class="nav-dropdown">
+<button class="nav-dropdown-button" type="button">Courses <span>▾</span></button>
+<div class="nav-dropdown-menu">
+<a href="{{ url_for('admin_courses') }}">Manage Courses</a>
+<a href="{{ url_for('admin_courses') }}#add-course">Add Course</a>
+</div>
+</div>
+<a href="{{ url_for('admin_users') }}">Registered Users</a>
+<a href="{{ url_for('admin_notices') }}">Notices</a>
+<a href="{{ url_for('admin_logout') }}">Logout</a>
+</div>
 </nav>
 <main class="admin-content">
 {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}

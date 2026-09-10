@@ -10,15 +10,24 @@
     <body>
         <div class="dashboard">
             <nav class="navbar">
-                <div class="logo">
-                    <img src="{{ url_for('static', filename='logo.png') }}" alt="LearnPoint Logo">
-                    <span>LearnPoint</span>
-                </div>
-                <div class="nav-links">
-                    <a href="{{ url_for('profile') }}">Profile</a>
-                    <a href="{{ url_for('logout') }}">Logout</a>
-                </div>
-            </nav>
+<div class="logo">{% if request.endpoint and request.endpoint.startswith('admin') %}<img src="{{ url_for('static', filename='logo.png') }}" alt="LearnPoint Logo"><span>LearnPoint Admin</span>{% else %}<img src="{{ url_for('static', filename='logo.png') }}" alt="LearnPoint Logo"><span>LearnPoint</span>{% endif %}</div>
+<div class="nav-links">
+<div class="nav-dropdown">
+<button class="nav-dropdown-button" type="button">Courses <span>▾</span></button>
+<div class="nav-dropdown-menu">{% for course_id, course in nav_courses.items() %}<a href="{{ url_for('course', course_id=course_id) }}">{{ course.icon }} {{ course.title }}</a>{% endfor %}</div>
+</div>
+{% if not (request.endpoint and request.endpoint.startswith('admin')) %}
+<div class="nav-dropdown notification-dropdown">
+<button class="nav-dropdown-button" type="button">🔔{% if nav_notices %}<span class="notification-count">{{ nav_notices|length }}</span>{% endif %}</button>
+<div class="nav-dropdown-menu notification-menu">{% if nav_notices %}{% for notice in nav_notices %}<div class="notification-item"><strong>{{ notice.title }}</strong><p>{{ notice.message }}</p><small>{{ notice.created_at.strftime('%d %b %Y, %I:%M %p') }}</small></div>{% endfor %}{% else %}<div class="notification-item">No new notices.</div>{% endif %}</div>
+</div>
+<a href="{{ url_for('profile') }}">Profile</a>
+{% endif %}
+{% if request.endpoint == 'lesson' %}<a href="{{ url_for('course', course_id=course_id) }}">Back to Course</a>{% endif %}
+{% if request.endpoint == 'admin_user_detail' %}<a href="{{ url_for('admin_dashboard') }}">Back</a>{% endif %}
+<a href="{{ url_for('admin_logout' if request.endpoint and request.endpoint.startswith('admin') else 'logout') }}">Logout</a>
+</div>
+</nav>
             <main class="dashboard-content">
                 <section class="welcome-section">
                     <h1>Welcome to LearnPoint</h1>

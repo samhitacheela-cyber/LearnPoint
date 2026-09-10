@@ -2014,3 +2014,66 @@ COURSES = {'python': {'title': 'Python Programming',
                                   'content': 'This lesson introduces mini project and explains the '
                                              'key ideas with simple examples and practical '
                                              'guidance.'}]}}
+
+# -----------------------------
+# COURSE CATEGORY ORGANIZER
+# -----------------------------
+
+def get_courses_by_category():
+
+    categories = {}
+
+    for course_id, course in COURSES.items():
+
+        category = course.get(
+            "category",
+            "Other"
+        )
+
+        if category not in categories:
+            categories[category] = []
+
+
+        categories[category].append({
+
+            "id": course_id,
+
+            "title": course.get(
+                "title",
+                ""
+            ),
+
+            "icon": course.get(
+                "icon",
+                ""
+            ),
+
+            "description": course.get(
+                "description",
+                ""
+            )
+
+        })
+
+
+    return categories
+
+
+
+# -----------------------------
+# GET ALL COURSE IDS
+# -----------------------------
+
+def get_all_course_ids():
+
+    return list(COURSES.keys())
+
+
+
+# -----------------------------
+# GET SINGLE COURSE
+# -----------------------------
+
+def get_course(course_id):
+
+    return COURSES.get(course_id)

@@ -15,11 +15,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 import os
 import secrets
+import json
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 load_dotenv()
 
-from database import db, User, Admin, Course, Progress, initialize_database
+from database import db, User, Admin, Course, Progress, Notice, initialize_database
 from course_data import COURSES
 from email_utils import hash_reset_token, send_password_reset_email
 from api_routes import api_bp
@@ -71,6 +72,34 @@ def get_logged_in_user():
     )
 
 
+def get_available_courses():
+    """Return built-in courses plus courses created by the admin."""
+    courses = {}
+    for course_id, data in COURSES.items():
+        courses[course_id] = data
+    for row in Course.query.order_by(Course.id).all():
+        if not row.is_active:
+            continue
+        try:
+            lessons = json.loads(row.lessons_json or "[]")
+        except Exception:
+            lessons = []
+        base = courses.get(row.id, {})
+        courses[row.id] = {
+            "title": row.title,
+            "category": row.category or base.get("category", "Computer Science"),
+            "icon": row.icon or base.get("icon", "📚"),
+            "description": row.description,
+            "lessons": lessons or base.get("lessons", [])
+        }
+    return courses
+
+
+def get_course_data(course_id):
+    courses = get_available_courses()
+    return courses.get(course_id)
+
+
 def get_course_progress(user_id):
 
     progress_records = Progress.query.filter_by(
@@ -85,7 +114,7 @@ def get_course_progress(user_id):
             record.course_id
         ] = record.progress
 
-    for course_id in COURSES:
+    for course_id in get_available_courses():
 
         if course_id not in progress_dict:
 
@@ -110,6 +139,16 @@ def get_user_course_progress(
 
     return 0
 
+
+
+@app.context_processor
+def inject_navigation_data():
+    try:
+        courses = get_available_courses()
+        notices = Notice.query.order_by(Notice.created_at.desc()).limit(10).all()
+    except Exception:
+        courses, notices = {}, []
+    return {"nav_courses": courses, "nav_notices": notices}
 
 # --------------------------------------------------
 # HOME
@@ -452,7 +491,7 @@ def profile():
     completion_map = {record.course_id: bool(record.completed) for record in progress_records}
 
     completed_course_items = []
-    for course_id, course_data in COURSES.items():
+    for course_id, course_data in get_available_courses().items():
         if completion_map.get(course_id, False):
             completed_course_items.append({
                 "title": course_data["title"],
@@ -466,7 +505,7 @@ def profile():
         user=user,
         completed_courses=completed_courses,
         completed_course_items=completed_course_items,
-        total_courses=len(COURSES)
+        total_courses=len(get_available_courses())
     )
 
 
@@ -555,7 +594,9 @@ def admin_dashboard():
 
     users = query.order_by(User.id.desc()).all()
 
-    courses = Course.query.order_by(Course.id).all()
+    courses = []
+    for course_id, data in get_available_courses().items():
+        courses.append({"id": course_id, **data})
 
     progress_records = Progress.query.all()
     progress_map = {}
@@ -568,12 +609,12 @@ def admin_dashboard():
     for user in users:
         completed = sum(
             1
-            for course_id in COURSES
+            for course_id in get_available_courses()
             if completion_map.get((user.id, course_id), False)
         )
         progress_values = [
             progress_map.get((user.id, course_id), 0)
-            for course_id in COURSES
+            for course_id in get_available_courses()
         ]
         overall_progress = round(
             sum(progress_values) / len(progress_values)
@@ -590,7 +631,7 @@ def admin_dashboard():
     completed_courses_total = sum(
         1
         for row in user_rows
-        if row["completed_courses"] == len(COURSES) and len(COURSES) > 0
+        if row["completed_courses"] == len(get_available_courses()) and len(get_available_courses()) > 0
     )
 
     return render_template(
@@ -601,8 +642,180 @@ def admin_dashboard():
         search=search,
         total_users=total_users,
         active_users=active_users,
-        completed_users=completed_courses_total
+        completed_users=completed_courses_total,
+        notices=Notice.query.order_by(Notice.created_at.desc()).all()
     )
+
+
+
+
+@app.route("/admin/courses")
+def admin_courses():
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    admin = db.session.get(Admin, session["admin_id"])
+    if not admin:
+        session.pop("admin_id", None)
+        return redirect(url_for("admin_login"))
+    courses = [{"id": course_id, **data} for course_id, data in get_available_courses().items()]
+    return render_template("admin_courses.html", admin=admin, courses=courses)
+
+
+@app.route("/admin/users")
+def admin_users():
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    admin = db.session.get(Admin, session["admin_id"])
+    if not admin:
+        session.pop("admin_id", None)
+        return redirect(url_for("admin_login"))
+
+    search = request.args.get("search", "").strip()
+    query = User.query
+    if search:
+        like = f"%{search}%"
+        query = query.filter(or_(User.name.ilike(like), User.email.ilike(like)))
+    users = query.order_by(User.id.desc()).all()
+
+    courses = [{"id": course_id, **data} for course_id, data in get_available_courses().items()]
+    progress_records = Progress.query.all()
+    progress_map = {(record.user_id, record.course_id): record.progress for record in progress_records}
+    completion_map = {(record.user_id, record.course_id): bool(record.completed) for record in progress_records}
+
+    user_rows = []
+    available_ids = list(get_available_courses().keys())
+    for user in users:
+        completed = sum(1 for course_id in available_ids if completion_map.get((user.id, course_id), False))
+        values = [progress_map.get((user.id, course_id), 0) for course_id in available_ids]
+        overall_progress = round(sum(values) / len(values)) if values else 0
+        user_rows.append({"user": user, "completed_courses": completed, "overall_progress": overall_progress})
+
+    return render_template("admin_users.html", admin=admin, users=user_rows, courses=courses, search=search)
+
+
+@app.route("/admin/notices")
+def admin_notices():
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    admin = db.session.get(Admin, session["admin_id"])
+    if not admin:
+        session.pop("admin_id", None)
+        return redirect(url_for("admin_login"))
+    notices = Notice.query.order_by(Notice.created_at.desc()).all()
+    return render_template("admin_notices.html", admin=admin, notices=notices)
+
+
+@app.route("/admin/courses/add", methods=["POST"])
+def admin_add_course():
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    course_id = request.form.get("course_id", "").strip().lower().replace(" ", "-")
+    title = request.form.get("title", "").strip()
+    category = request.form.get("category", "Computer Science").strip()
+    icon = request.form.get("icon", "📚").strip() or "📚"
+    description = request.form.get("description", "").strip()
+    if not course_id or not title or not description:
+        flash("Course ID, title and description are required.", "error")
+        return redirect(url_for("admin_dashboard"))
+    if course_id in COURSES or db.session.get(Course, course_id):
+        flash("A course with that ID already exists.", "error")
+        return redirect(url_for("admin_dashboard"))
+    db.session.add(Course(id=course_id, title=title, description=description, category=category, icon=icon, lessons_json="[]"))
+    db.session.commit()
+    flash("Course added successfully.", "success")
+    return redirect(url_for("admin_courses"))
+
+
+@app.route("/admin/courses/<course_id>/delete", methods=["POST"])
+def admin_delete_course(course_id):
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    course = db.session.get(Course, course_id)
+    if not course:
+        flash("Course not found.", "error")
+        return redirect(url_for("admin_dashboard"))
+    Progress.query.filter_by(course_id=course_id).delete(synchronize_session=False)
+    course.is_active = False
+    db.session.commit()
+    flash("Course deleted successfully.", "success")
+    return redirect(url_for("admin_courses"))
+
+
+@app.route("/admin/courses/<course_id>/subjects/add", methods=["POST"])
+def admin_add_subject(course_id):
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    course = db.session.get(Course, course_id)
+    if not course or not course.is_active:
+        flash("Course not found.", "error")
+        return redirect(url_for("admin_dashboard"))
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    content = request.form.get("content", "").strip()
+    if not title or not description:
+        flash("Subject title and description are required.", "error")
+        return redirect(url_for("admin_dashboard"))
+    try:
+        lessons = json.loads(course.lessons_json or "[]")
+    except Exception:
+        lessons = []
+    lessons.append({"number": len(lessons)+1, "title": title, "description": description, "content": content or description})
+    course.lessons_json = json.dumps(lessons)
+    db.session.commit()
+    flash("Subject added successfully.", "success")
+    return redirect(url_for("admin_courses"))
+
+
+
+@app.route("/admin/courses/<course_id>/subjects/<int:subject_number>/delete", methods=["POST"])
+def admin_delete_subject(course_id, subject_number):
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    course = db.session.get(Course, course_id)
+    if not course or not course.is_active:
+        flash("Course not found.", "error")
+        return redirect(url_for("admin_courses"))
+    try:
+        lessons = json.loads(course.lessons_json or "[]")
+    except Exception:
+        lessons = []
+    updated = [lesson for lesson in lessons if int(lesson.get("number", 0)) != subject_number]
+    if len(updated) == len(lessons):
+        flash("Subject not found.", "error")
+        return redirect(url_for("admin_courses"))
+    for index, lesson in enumerate(updated, start=1):
+        lesson["number"] = index
+    course.lessons_json = json.dumps(updated)
+    db.session.commit()
+    flash("Subject deleted successfully.", "success")
+    return redirect(url_for("admin_courses"))
+
+
+@app.route("/admin/notices/add", methods=["POST"])
+def admin_add_notice():
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    title = request.form.get("title", "").strip()
+    message = request.form.get("message", "").strip()
+    if not title or not message:
+        flash("Notice title and message are required.", "error")
+        return redirect(url_for("admin_dashboard"))
+    db.session.add(Notice(title=title, message=message))
+    db.session.commit()
+    flash("Notice posted. All users can now see it.", "success")
+    return redirect(url_for("admin_notices"))
+
+
+@app.route("/admin/notices/<int:notice_id>/delete", methods=["POST"])
+def admin_delete_notice(notice_id):
+    if not session.get("admin_id"):
+        return redirect(url_for("admin_login"))
+    notice = db.session.get(Notice, notice_id)
+    if notice:
+        db.session.delete(notice)
+        db.session.commit()
+        flash("Notice deleted.", "success")
+    return redirect(url_for("admin_notices"))
 
 
 @app.route("/admin/users/<int:user_id>")
@@ -627,7 +840,7 @@ def admin_user_detail(user_id):
     completion_map = {record.course_id: bool(record.completed) for record in progress_records}
 
     user_courses = []
-    for course_id, course_data in COURSES.items():
+    for course_id, course_data in get_available_courses().items():
         user_courses.append({
             "title": course_data["title"],
             "course_id": course_id,
@@ -672,7 +885,7 @@ def admin_delete_user(user_id):
     db.session.commit()
 
     flash("User account deleted successfully.", "success")
-    return redirect(url_for("admin_dashboard"))
+    return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
@@ -766,7 +979,7 @@ def dashboard():
 
     courses = []
 
-    for course_id, course_data in COURSES.items():
+    for course_id, course_data in get_available_courses().items():
 
         courses.append(
             {
@@ -807,13 +1020,11 @@ def course(course_id):
             url_for("login")
         )
 
-    if course_id not in COURSES:
+    if course_id not in get_available_courses():
 
         return "Course not found", 404
 
-    course_data = COURSES[
-        course_id
-    ]
+    course_data = get_course_data(course_id)
 
     progress_record = Progress.query.filter_by(
         user_id=user.id,
@@ -848,7 +1059,7 @@ def complete_course(course_id):
     if not user:
         return redirect(url_for("login"))
 
-    if course_id not in COURSES:
+    if course_id not in get_available_courses():
         return "Course not found", 404
 
     progress_record = Progress.query.filter_by(
@@ -887,13 +1098,11 @@ def lesson(
             url_for("login")
         )
 
-    if course_id not in COURSES:
+    if course_id not in get_available_courses():
 
         return "Course not found", 404
 
-    course_data = COURSES[
-        course_id
-    ]
+    course_data = get_course_data(course_id)
 
     lesson_data = None
 
@@ -944,13 +1153,11 @@ def complete_lesson(
             url_for("login")
         )
 
-    if course_id not in COURSES:
+    if course_id not in get_available_courses():
 
         return "Course not found", 404
 
-    lessons = COURSES[
-        course_id
-    ]["lessons"]
+    lessons = get_course_data(course_id)["lessons"]
 
     total_lessons = len(lessons)
 
@@ -1006,7 +1213,11 @@ def complete_lesson(
     )
 
 
-register_ai_routes(app, get_logged_in_user, COURSES)
+register_ai_routes(
+    app,
+    get_logged_in_user,
+    get_available_courses
+)
 
 
 # --------------------------------------------------
